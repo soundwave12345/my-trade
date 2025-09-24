@@ -3,10 +3,10 @@ name: Deploy Application
 on:
   push:
     branches:
-      - main  # Trigger quando fai push su main
+      - master  # Trigger quando fai push su main
   pull_request:
     branches:
-      - main  # Trigger quando apri una PR verso main
+      - master  # Trigger quando apri una PR verso main
     types:
       - closed # Esegue solo quando la PR viene chiusa (merge completata)
 jobs:
