@@ -28,3 +28,15 @@ jobs:
 
       - name: Avvia nuovo container
         run: docker run -d -p 5002:5002 -v $(pwd)/data:/app/data --name mytrade_container mytrade:latest
+
+      - name: Controlla i log iniziali
+        run: |
+          sleep 5  # aspetta che il servizio parta
+          docker logs mytrade_container
+          
+          # Se il container è crashato, esci con errore
+          if [ $(docker inspect -f '{{.State.ExitCode}}' mytrade_container) != 0 ]; then
+            echo "❌ Il container è crashato all'avvio!"
+            exit 1
+          fi
+
