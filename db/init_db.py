@@ -1,7 +1,7 @@
 # db/init_db.py
 import os
-from .database import Base, engine, DB_PATH
-from .models import Stock, Price, ApiUsage
+from db.database import Base, engine, DB_PATH
+from db.models import Stock, Price, ApiUsage
 
 def init_db():
     """
