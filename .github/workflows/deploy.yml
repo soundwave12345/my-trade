@@ -27,4 +27,4 @@ jobs:
         run: docker rm mytrade_container || true
 
       - name: Avvia nuovo container
-        run: docker run -d -p 5002:5002 --name mytrade_container mytrade:latest
+        run: docker run -d -p 5002:5002 -v $(pwd)/data:/app/data --name mytrade_container mytrade:latest

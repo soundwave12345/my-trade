@@ -1,18 +1,28 @@
-# Usa una versione leggera di Python
+# Dockerfile
 FROM python:3.11-slim
 
-# Imposta la working directory
 WORKDIR /app
 
-# Copia file di dipendenze e installa
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    sqlite3 \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+# Installa dipendenze
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia tutto il progetto
+# Copia il codice sorgente
 COPY . .
 
 # Espone la porta usata dall'app Flask
 EXPOSE 5002
 
-# Comando per avviare l'app
-CMD ["python", "app.py"]
+# Creazione directory dati
+RUN mkdir -p /app/data
+
+# Volume per persistenza dati
+VOLUME ["/app/data"]
+
+# Comando di default: inizializza DB e avvia il servizio
+CMD ["sh", "-c", "python db/init_db.py && python engine/data_collector.py"]
