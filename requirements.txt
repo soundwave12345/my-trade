@@ -1,1 +1,7 @@
-flask==3.0.0
+fastapi
+uvicorn[standard]
+yfinance
+pandas
+sqlalchemy
+plotly
+apscheduler
