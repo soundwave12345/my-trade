@@ -87,3 +87,19 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
     db.commit()
     db.close()
     print(f"[{datetime.utcnow()}] Saved {len(df)} rows for {ticker} ({interval}).")
+if __name__ == "__main__":
+    import sys
+
+    # Parametri: ticker, interval, period
+    if len(sys.argv) != 4:
+        print("Usage: python -m engine.data_collector <TICKER> <INTERVAL> <PERIOD>")
+        print("Esempio: python -m engine.data_collector UCG.MI 1h 7d")
+        sys.exit(1)
+
+    ticker = sys.argv[1]
+    interval = sys.argv[2]
+    period = sys.argv[3]
+
+    print(f"[INFO] Scarico dati di prova per {ticker} ({interval}, {period})")
+    fetch_and_store_prices(ticker, interval=interval, period=period)
+    print("[INFO] Fine scarico dati di prova.")
