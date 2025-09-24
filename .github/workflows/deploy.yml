@@ -1,0 +1,26 @@
+name: Deploy Application
+
+on:
+  push:
+    branches:
+      - main  # Avvia solo quando fai push su main
+
+jobs:
+  deploy:
+    runs-on: self-hosted  # Indica che deve usare il runner del server
+
+    steps:
+      - name: Checkout del codice
+        uses: actions/checkout@v4
+
+      - name: Build immagine Docker
+        run: docker build -t mytrade:latest .
+
+      - name: Stop container esistente
+        run: docker stop mytrade_container || true
+
+      - name: Rimuovi container vecchio
+        run: docker rm mytrade_container || true
+
+      - name: Avvia nuovo container
+        run: docker run -d -p 5000:5000 --name mytrade_container mytrade:latest
