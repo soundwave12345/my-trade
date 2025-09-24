@@ -3,8 +3,12 @@ name: Deploy Application
 on:
   push:
     branches:
-      - main  # Avvia solo quando fai push su main
-
+      - main  # Trigger quando fai push su main
+  pull_request:
+    branches:
+      - main  # Trigger quando apri una PR verso main
+    types:
+      - closed # Esegue solo quando la PR viene chiusa (merge completata)
 jobs:
   deploy:
     runs-on: self-hosted  # Indica che deve usare il runner del server
