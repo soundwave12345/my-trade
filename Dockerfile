@@ -12,7 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Espone la porta usata dall'app Flask
-EXPOSE 5000
+EXPOSE 5002
 
 # Comando per avviare l'app
 CMD ["python", "app.py"]
