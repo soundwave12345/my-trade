@@ -1,101 +1,96 @@
 # engine/populate_mib.py
 import yfinance as yf
 import pandas as pd
-from sqlalchemy.orm import Session
 from datetime import datetime
+from sqlalchemy.orm import Session
 from db.database import SessionLocal
 from db.models import Stock, Price, ApiUsage
-from engine.data_collector import BUFFER_MINUTES
 
-# Lista titoli FTSE MIB (con suffisso .MI)
+# Timeframe supportati
+INTERVALS = ["1m", "5m", "15m", "30m", "1h", "6h", "1d", "1w", "1mo"]
+
+# Esempio tickers FTSE MIB (aggiornare se necessario)
 FTSE_MIB_TICKERS = [
-    "AMP.MI", "AZM.MI", "BAMI.MI", "BMPS.MI", "BZU.MI", "CPR.MI",
-    "DIA.MI", "ENEL.MI", "ENI.MI", "ERG.MI", "EXO.MI", "G.MI",
-    "IG.MI", "INW.MI", "ISP.MI", "IT.MI", "JUVE.MI", "LDO.MI",
-    "MB.MI", "MONC.MI", "NEXI.MI", "PIRC.MI", "PRY.MI", "REC.MI",
-    "SFER.MI", "STLAM.MI", "STM.MI", "TEN.MI", "TRN.MI", "UCG.MI"
+    "UCG.MI", "ENI.MI", "ISP.MI", "ENEL.MI", "ATL.MI",
+    "CNH.MI", "LUX.MI", "MONC.MI", "PIRC.MI", "PRY.MI",
+    "STM.MI", "EXO.MI", "IT.MI", "A2A.MI", "AZM.MI",
+    "MB.MI", "MS.MI", "SFER.MI", "SAF.MI", "TEN.MI",
+    "TIT.MI", "TL.MI", "SCC.MI", "BMED.MI", "SRG.MI",
+    "CSP.MI", "BAMI.MI", "MED.MI", "FE.MI", "FIAT.MI"
 ]
 
-# Timeframes di interesse
-TIMEFRAMES = ["1h", "6h", "1d", "1wk", "1mo"]
+CHUNK_SIZE = 5  # scarica ticker in blocchi da 5 per volta
 
+def increment_api_counter(db: Session):
+    today = datetime.utcnow().date()
+    usage = db.query(ApiUsage).filter(ApiUsage.date == today).first()
+    if not usage:
+        usage = ApiUsage(date=today, count=0)
+        db.add(usage)
+    usage.count += 1
+    db.commit()
 
-def store_bulk_data(df, interval, db):
-    """
-    Salva i dati bulk nel database, gestendo i multi-ticker di yfinance.
-    """
-    # Se il timestamp è nell'indice, lo portiamo a colonna
+def store_bulk_data(df, interval, db: Session):
+    """Salva i dati bulk nel database, gestendo multi-ticker e ticker senza dati"""
     if isinstance(df.index, pd.DatetimeIndex):
         df = df.reset_index()
-
-    # Rinomina la colonna "Datetime" in "timestamp" se presente
     if "Datetime" in df.columns:
         df = df.rename(columns={"Datetime": "timestamp"})
+    elif "timestamp" not in df.columns:
+        print(f"[WARNING] DataFrame senza timestamp per interval {interval}. Skip batch.")
+        return
 
-    # Ciclo su tutte le righe
-    for _, row in df.iterrows():
-        timestamp_value = pd.to_datetime(row["timestamp"]).to_pydatetime()
-
-        # Estraggo i dati per ogni ticker
-        for ticker in df.columns.levels[1]:
-            try:
-                adj_close = row[("Adj Close", ticker)]
-                close = row[("Close", ticker)]
-                open_price = row[("Open", ticker)]
-                high = row[("High", ticker)]
-                low = row[("Low", ticker)]
-                volume = row[("Volume", ticker)]
-
-                # Salva nel database
-                db.add_price(
-                    ticker=ticker,
-                    timestamp=timestamp_value,
-                    interval=interval,
-                    open_price=open_price,
-                    high=high,
-                    low=low,
-                    close=close,
-                    adj_close=adj_close,
-                    volume=volume,
-                )
-            except KeyError:
-                # Il ticker potrebbe non avere dati completi
+    # Ciclo sui ticker presenti
+    tickers_in_df = df.columns.levels[1]
+    for ticker in tickers_in_df:
+        try:
+            ticker_df = df.xs(ticker, axis=1, level=1, drop_level=False)
+            ticker_df = ticker_df.dropna(subset=["Close"])
+            if ticker_df.empty:
+                print(f"[INFO] Nessun dato per {ticker}, skip.")
                 continue
 
+            # Recupera o crea lo stock
+            stock = db.query(Stock).filter(Stock.ticker == ticker).first()
+            if not stock:
+                stock = Stock(ticker=ticker)
+                db.add(stock)
+                db.commit()
+                db.refresh(stock)
+
+            ticker_df.reset_index(inplace=True)
+            for _, row in ticker_df.iterrows():
+                timestamp_value = pd.to_datetime(row["timestamp"]).to_pydatetime()
+                price = Price(
+                    stock_id=stock.id,
+                    timestamp=timestamp_value,
+                    open=float(row[("Open", ticker)]),
+                    high=float(row[("High", ticker)]),
+                    low=float(row[("Low", ticker)]),
+                    close=float(row[("Close", ticker)]),
+                    volume=int(row[("Volume", ticker)]) if not pd.isna(row[("Volume", ticker)]) else 0,
+                    interval=interval
+                )
+                db.merge(price)
+            db.commit()
+            print(f"[{datetime.utcnow()}] Salvati {len(ticker_df)} record per {ticker} ({interval})")
+        except Exception as e:
+            print(f"[ERROR] Problema con ticker {ticker}: {e}")
 
 def populate_all():
     db = SessionLocal()
-
-    for interval in TIMEFRAMES:
+    for interval in INTERVALS:
         print(f"[INFO] Scarico dati FTSE MIB (interval={interval}, period=max)")
-
-        # Scarico in bulk per tutti i tickers
-        df = yf.download(
-            FTSE_MIB_TICKERS,
-            interval=interval,
-            period="max",
-            group_by="ticker",
-            auto_adjust=False,
-            threads=True
-        )
-
-        if df.empty:
-            print(f"[WARNING] Nessun dato scaricato per interval {interval}")
-            continue
-
-        # Salvo nel database
-        store_bulk_data(df, interval, db)
-
-        # Aggiorno contatore API
-        today = datetime.utcnow().date()
-        usage = db.query(ApiUsage).filter(ApiUsage.date == today).first()
-        if not usage:
-            usage = ApiUsage(date=today, count=0)
-            db.add(usage)
-        usage.count += 1
-        db.commit()
-
+        for i in range(0, len(FTSE_MIB_TICKERS), CHUNK_SIZE):
+            chunk = FTSE_MIB_TICKERS[i:i+CHUNK_SIZE]
+            try:
+                df = yf.download(chunk, interval=interval, period="max", group_by="ticker", auto_adjust=True)
+                increment_api_counter(db)
+                store_bulk_data(df, interval, db)
+            except Exception as e:
+                print(f"[ERROR] Problema download chunk {chunk} ({interval}): {e}")
     db.close()
+    print("[INFO] Popolamento FTSE MIB completato.")
 
 if __name__ == "__main__":
     populate_all()
