@@ -25,5 +25,5 @@ RUN mkdir -p /app/data
 VOLUME ["/app/data"]
 
 # Comando di default: inizializza DB e avvia il servizio
-CMD ["sh", "-c", "python -m db.init_db && python engine/data_collector.py UCG.MI 1h 7d"]
+CMD ["sh", "-c", "python -m db.init_db && python engine.data_collector UCG.MI 1h 7d"]
 #CMD ["python", "db/init_db.py && python engine/data_collector.py"]
