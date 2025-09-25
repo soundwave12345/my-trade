@@ -61,7 +61,7 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
 
     # Chiamata API
     increment_api_counter(db)
-    df = yf.download(ticker, interval=interval, period=period, start=start_time)
+    df = yf.download(ticker, interval=interval, period=period, start=start_time, auto_adjust=False)
     df.reset_index(inplace=True)
     df.rename(columns={
         "Datetime": "timestamp",
@@ -74,6 +74,9 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
 
     # Salva su DB
     for _, row in df.iterrows():
+        timestamp_value = row["timestamp"]
+        if hasattr(timestamp_value, "to_pydatetime"):
+            timestamp_value = timestamp_value.to_pydatetime()
         price = Price(
             stock_id=stock.id,
             timestamp=row["timestamp"],
