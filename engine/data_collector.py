@@ -65,7 +65,9 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
     df = yf.download(ticker, interval=interval, period=period, start=start_time, auto_adjust=False)
     # Reset index per avere la colonna 'timestamp' come dato normale
     df.reset_index(inplace=True)
-    
+    print("Colonne:", df.columns)
+    print(df.head())
+
     # Se la colonna temporale si chiama 'index', rinominala
     if "index" in df.columns:
         df.rename(columns={"index": "timestamp"}, inplace=True)
