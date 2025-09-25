@@ -19,46 +19,49 @@ FTSE_MIB_TICKERS = [
 # Timeframes di interesse
 TIMEFRAMES = ["1h", "6h", "1d", "1wk", "1mo"]
 
-def store_bulk_data(df, interval, db: Session):
+
+def store_bulk_data(df, interval, db):
     """
-    Salva i dati storici di tutti i titoli da un dataframe multi-index Yahoo
+    Salva i dati bulk nel database, gestendo i multi-ticker di yfinance.
     """
-    for ticker in df.columns.levels[1]:  # ogni ticker
-        stock = db.query(Stock).filter(Stock.ticker == ticker).first()
-        if not stock:
-            stock = Stock(ticker=ticker)
-            db.add(stock)
-            db.commit()
-            db.refresh(stock)
+    # Se il timestamp è nell'indice, lo portiamo a colonna
+    if isinstance(df.index, pd.DatetimeIndex):
+        df = df.reset_index()
 
-        ticker_df = df.xs(ticker, axis=1, level=1).copy()
-        ticker_df.reset_index(inplace=True)
-        ticker_df.rename(columns={
-            "Datetime": "timestamp",
-            "Open": "open",
-            "High": "high",
-            "Low": "low",
-            "Close": "close",
-            "Volume": "volume"
-        }, inplace=True)
+    # Rinomina la colonna "Datetime" in "timestamp" se presente
+    if "Datetime" in df.columns:
+        df = df.rename(columns={"Datetime": "timestamp"})
 
-        for _, row in ticker_df.iterrows():
-            timestamp_value = pd.to_datetime(row["timestamp"]).to_pydatetime()
-            price = Price(
-                stock_id=stock.id,
-                timestamp=timestamp_value,
-                open=float(row["open"]),
-                high=float(row["high"]),
-                low=float(row["low"]),
-                close=float(row["close"]),
-                volume=int(row["volume"]) if not pd.isna(row["volume"]) else 0,
-                interval=interval
-            )
-            db.merge(price)
+    # Ciclo su tutte le righe
+    for _, row in df.iterrows():
+        timestamp_value = pd.to_datetime(row["timestamp"]).to_pydatetime()
 
-        print(f"[{datetime.utcnow()}] Salvati {len(ticker_df)} record per {ticker} ({interval})")
+        # Estraggo i dati per ogni ticker
+        for ticker in df.columns.levels[1]:
+            try:
+                adj_close = row[("Adj Close", ticker)]
+                close = row[("Close", ticker)]
+                open_price = row[("Open", ticker)]
+                high = row[("High", ticker)]
+                low = row[("Low", ticker)]
+                volume = row[("Volume", ticker)]
 
-    db.commit()
+                # Salva nel database
+                db.add_price(
+                    ticker=ticker,
+                    timestamp=timestamp_value,
+                    interval=interval,
+                    open_price=open_price,
+                    high=high,
+                    low=low,
+                    close=close,
+                    adj_close=adj_close,
+                    volume=volume,
+                )
+            except KeyError:
+                # Il ticker potrebbe non avere dati completi
+                continue
+
 
 def populate_all():
     db = SessionLocal()

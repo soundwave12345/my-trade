@@ -24,7 +24,7 @@ jobs:
         run: docker stop mytrade_container || true
 
       - name: Rimuovi container vecchio
-        run: docker rm mytrade_container || true
+        run: docker rm mytrade_container || true 
 
       - name: Avvia nuovo container
         run: docker run -d -p 5002:5002 -v /home/ha/mytradedb/data:/app/data --name mytrade_container mytrade:latest
