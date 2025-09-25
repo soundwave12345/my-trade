@@ -76,8 +76,14 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
     # Salva su DB
     for _, row in df.iterrows():
         timestamp_value = row["timestamp"]
+
         if hasattr(timestamp_value, "to_pydatetime"):
             timestamp_value = timestamp_value.to_pydatetime()
+        elif str(type(timestamp_value)) == "<class 'numpy.datetime64'>":
+            timestamp_value = pd.to_datetime(timestamp_value).to_pydatetime()
+        elif isinstance(timestamp_value, str):
+            timestamp_value = datetime.fromisoformat(timestamp_value)
+        print(row["timestamp"], type(row["timestamp"]))
         price = Price(
             stock_id=stock.id,
             timestamp=row["timestamp"],
