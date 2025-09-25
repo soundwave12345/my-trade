@@ -39,83 +39,75 @@ def store_bulk_data(df, interval, db: Session):
     print(f"DataFrame type: {type(df)}")
     print(f"DataFrame shape: {df.shape}")
     
+    # Debug della struttura delle colonne
+    if hasattr(df.columns, 'levels'):
+        print(f"Column levels: {len(df.columns.levels)}")
+        print(f"Level 0: {df.columns.levels[0][:5]}...")  # primi 5 elementi
+        print(f"Level 1: {df.columns.levels[1][:5]}...")  # primi 5 elementi
+    else:
+        print(f"Columns: {df.columns[:10]}")  # prime 10 colonne
+    
     # Gestisci il caso di DataFrame vuoto
     if df.empty:
         print(f"[WARNING] DataFrame vuoto per interval {interval}")
         return
     
-    # Se abbiamo un singolo ticker, il DataFrame ha una struttura diversa
-    if len(df.columns.levels[1] if hasattr(df.columns, 'levels') else []) <= 1:
-        # Caso singolo ticker o ticker senza multi-level columns
-        print(f"[INFO] Gestendo singolo ticker o struttura semplice")
+    # Reset index per avere timestamp come colonna
+    df_reset = df.reset_index()
+    
+    # Rinomina la colonna dell'indice temporale
+    if 'Date' in df_reset.columns:
+        df_reset = df_reset.rename(columns={'Date': 'timestamp'})
+    elif 'Datetime' in df_reset.columns:
+        df_reset = df_reset.rename(columns={'Datetime': 'timestamp'})
+    
+    # Controlla se abbiamo multi-level columns
+    if hasattr(df.columns, 'levels') and len(df.columns.levels) > 1:
+        print(f"[INFO] Gestendo DataFrame multi-ticker")
         
-        # Reset index per avere timestamp come colonna
-        df_reset = df.reset_index()
+        # Estrai tutti i ticker unici dalle colonne
+        # Le colonne sono nel formato (ticker, metric)
+        tickers = set()
+        for col in df_reset.columns:
+            if isinstance(col, tuple) and len(col) == 2:
+                ticker = col[0]
+                if ticker != 'timestamp':  # Escludi timestamp
+                    tickers.add(ticker)
         
-        # Se non c'è la colonna timestamp, prendi l'indice
-        if 'Date' in df_reset.columns:
-            df_reset = df_reset.rename(columns={'Date': 'timestamp'})
-        elif 'Datetime' in df_reset.columns:
-            df_reset = df_reset.rename(columns={'Datetime': 'timestamp'})
-        
-        # Se abbiamo ancora multi-level columns con un solo ticker
-        if hasattr(df.columns, 'levels') and len(df.columns.levels) > 1:
-            ticker = df.columns.levels[1][0]
-            df_flat = df_reset.copy()
-            # Rinomina le colonne rimuovendo il livello del ticker
-            new_columns = {}
-            for col in df_flat.columns:
-                if isinstance(col, tuple):
-                    new_columns[col] = col[0]
-                else:
-                    new_columns[col] = col
-            df_flat = df_flat.rename(columns=new_columns)
-            
-            process_single_ticker(df_flat, ticker, interval, db)
-        else:
-            print(f"[WARNING] Struttura DataFrame non riconosciuta per interval {interval}")
-            print(f"Columns: {df.columns}")
-            return
-    else:
-        # Caso multi-ticker
-        print(f"[INFO] Gestendo multi-ticker")
-        
-        # Reset index per avere timestamp come colonna
-        df_reset = df.reset_index()
-        
-        # Rinomina la colonna dell'indice temporale
-        if 'Date' in df_reset.columns:
-            df_reset = df_reset.rename(columns={'Date': 'timestamp'})
-        elif 'Datetime' in df_reset.columns:
-            df_reset = df_reset.rename(columns={'Datetime': 'timestamp'})
+        print(f"[INFO] Ticker trovati: {list(tickers)}")
         
         # Processa ogni ticker
-        tickers = df.columns.levels[1]
         for ticker in tickers:
             try:
                 print(f"[INFO] Processando ticker: {ticker}")
                 
-                # Estrai dati per il ticker specifico
-                ticker_columns = ['timestamp']  # Inizia con timestamp
+                # Crea DataFrame per questo ticker
+                ticker_data = {'timestamp': df_reset['timestamp']}
+                
+                # Cerca tutte le colonne per questo ticker
                 for col in df_reset.columns:
-                    if isinstance(col, tuple) and col[1] == ticker:
-                        ticker_columns.append(col)
+                    if isinstance(col, tuple) and col[0] == ticker:
+                        metric = col[1]  # Open, High, Low, Close, Volume
+                        ticker_data[metric] = df_reset[col]
                 
-                ticker_df = df_reset[ticker_columns].copy()
-                
-                # Rinomina le colonne rimuovendo il nome del ticker
-                new_columns = {'timestamp': 'timestamp'}
-                for col in ticker_df.columns:
-                    if isinstance(col, tuple):
-                        new_columns[col] = col[0]  # Prendi solo il nome della metrica (Open, High, etc.)
-                
-                ticker_df = ticker_df.rename(columns=new_columns)
+                # Crea DataFrame per questo ticker
+                ticker_df = pd.DataFrame(ticker_data)
                 
                 process_single_ticker(ticker_df, ticker, interval, db)
                 
             except Exception as e:
                 print(f"[ERROR] Errore processando ticker {ticker}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
+    
+    else:
+        # Caso singolo ticker senza multi-level
+        print(f"[INFO] Gestendo singolo ticker")
+        # Assumi che tutte le colonne siano per un singolo ticker
+        # Il nome del ticker dovrebbe essere nel primo chunk
+        ticker = FTSE_MIB_TICKERS[0] if FTSE_MIB_TICKERS else "UNKNOWN"
+        process_single_ticker(df_reset, ticker, interval, db)
 
 def process_single_ticker(df, ticker, interval, db: Session):
     """Processa i dati di un singolo ticker"""
