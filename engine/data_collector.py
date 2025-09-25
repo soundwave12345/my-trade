@@ -7,6 +7,7 @@ from db.database import SessionLocal, init_db
 from db.models import Stock, Price, ApiUsage
 from .validator import validate_volumes, validate_ohlc
 
+print ("collector ok")
 # Timeframe supportati: Yahoo -> [1m, 2m, 5m, 15m, 30m, 60m, 90m, 1d, 1wk, 1mo]
 INTERVAL_MAP = {
     "1m": "1min",
@@ -87,9 +88,10 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
     db.commit()
     db.close()
     print(f"[{datetime.utcnow()}] Saved {len(df)} rows for {ticker} ({interval}).")
+    
 if __name__ == "__main__":
     import sys
-
+    print("collector dentro")
     # Parametri: ticker, interval, period
     if len(sys.argv) != 4:
         print("Usage: python -m engine.data_collector <TICKER> <INTERVAL> <PERIOD>")
