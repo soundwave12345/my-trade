@@ -3,7 +3,7 @@ import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from db.database import SessionLocal, init_db
+from db.database import SessionLocal
 from db.models import Stock, Price, ApiUsage
 from .validator import validate_volumes, validate_ohlc
 
