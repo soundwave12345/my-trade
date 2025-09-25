@@ -31,7 +31,7 @@ jobs:
 
       - name: Controlla i log iniziali
         run: |
-          sleep 10  # aspetta che il servizio parta
+          sleep 30  # aspetta che il servizio parta
           docker logs mytrade_container
           
           # Se il container è crashato, esci con errore
