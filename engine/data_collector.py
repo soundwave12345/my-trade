@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from db.database import SessionLocal
 from db.models import Stock, Price, ApiUsage
 from .validator import validate_volumes, validate_ohlc
+from datetime import datetime
 
 print ("collector ok")
 # Timeframe supportati: Yahoo -> [1m, 2m, 5m, 15m, 30m, 60m, 90m, 1d, 1wk, 1mo]
