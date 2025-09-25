@@ -10,9 +10,9 @@ import time
 # Timeframe supportati
 INTERVALS = ["1m", "5m", "15m", "30m", "1h", "6h", "1d", "1w", "1mo"]
 
-# Esempio tickers FTSE MIB (aggiornati)
+# Esempio tickers FTSE MIB (aggiornati e verificati)
 FTSE_MIB_TICKERS = [
-    "UCG.MI", "ENI.MI", "ISP.MI", "ENEL.MI", "ATL.MI",
+    "UCG.MI", "ENI.MI", "ISP.MI", "ENEL.MI", # "ATL.MI" rimosso - delisted
     "CNH.MI", "LUX.MI", "MONC.MI", "PIRC.MI", "PRY.MI",
     "STM.MI", "EXO.MI", "IT.MI", "A2A.MI", "AZM.MI",
     "MB.MI", "MS.MI", "SFER.MI", "SAF.MI", "TEN.MI",
@@ -39,40 +39,62 @@ def store_bulk_data(df, interval, db: Session):
     print(f"DataFrame type: {type(df)}")
     print(f"DataFrame shape: {df.shape}")
     
-    # Debug della struttura delle colonne
-    if hasattr(df.columns, 'levels'):
-        print(f"Column levels: {len(df.columns.levels)}")
-        print(f"Level 0: {df.columns.levels[0][:5]}...")  # primi 5 elementi
-        print(f"Level 1: {df.columns.levels[1][:5]}...")  # primi 5 elementi
-    else:
-        print(f"Columns: {df.columns[:10]}")  # prime 10 colonne
-    
     # Gestisci il caso di DataFrame vuoto
     if df.empty:
         print(f"[WARNING] DataFrame vuoto per interval {interval}")
         return
     
+    # Debug della struttura delle colonne PRIMA del reset_index
+    print(f"Index name: {df.index.name}")
+    print(f"Index type: {type(df.index)}")
+    if hasattr(df.columns, 'levels'):
+        print(f"Column levels: {len(df.columns.levels)}")
+        if len(df.columns.levels) > 0:
+            print(f"Level 0 (first 5): {list(df.columns.levels[0])[:5]}")
+        if len(df.columns.levels) > 1:
+            print(f"Level 1 (first 5): {list(df.columns.levels[1])[:5]}")
+    else:
+        print(f"Columns (first 10): {list(df.columns)[:10]}")
+    
     # Reset index per avere timestamp come colonna
     df_reset = df.reset_index()
     
-    # Rinomina la colonna dell'indice temporale
-    if 'Date' in df_reset.columns:
-        df_reset = df_reset.rename(columns={'Date': 'timestamp'})
-    elif 'Datetime' in df_reset.columns:
-        df_reset = df_reset.rename(columns={'Datetime': 'timestamp'})
+    print(f"[DEBUG] Dopo reset_index:")
+    print(f"Columns dopo reset: {list(df_reset.columns)[:10]}")
+    
+    # Trova la colonna timestamp
+    timestamp_col = None
+    for col in df_reset.columns:
+        col_name = col if isinstance(col, str) else str(col)
+        if any(term in col_name.lower() for term in ['date', 'datetime', 'time']):
+            timestamp_col = col
+            break
+    
+    # Se non trovata, usa il primo elemento che non è una tupla
+    if timestamp_col is None:
+        for col in df_reset.columns:
+            if not isinstance(col, tuple):
+                timestamp_col = col
+                break
+    
+    if timestamp_col is None:
+        print(f"[ERROR] Impossibile trovare colonna timestamp")
+        return
+    
+    print(f"[DEBUG] Usando come timestamp: {timestamp_col}")
     
     # Controlla se abbiamo multi-level columns
-    if hasattr(df.columns, 'levels') and len(df.columns.levels) > 1:
+    has_multiindex_cols = any(isinstance(col, tuple) for col in df_reset.columns)
+    
+    if has_multiindex_cols:
         print(f"[INFO] Gestendo DataFrame multi-ticker")
         
-        # Estrai tutti i ticker unici dalle colonne
-        # Le colonne sono nel formato (ticker, metric)
+        # Estrai tutti i ticker unici dalle colonne tuple
         tickers = set()
         for col in df_reset.columns:
             if isinstance(col, tuple) and len(col) == 2:
                 ticker = col[0]
-                if ticker != 'timestamp':  # Escludi timestamp
-                    tickers.add(ticker)
+                tickers.add(ticker)
         
         print(f"[INFO] Ticker trovati: {list(tickers)}")
         
@@ -82,13 +104,18 @@ def store_bulk_data(df, interval, db: Session):
                 print(f"[INFO] Processando ticker: {ticker}")
                 
                 # Crea DataFrame per questo ticker
-                ticker_data = {'timestamp': df_reset['timestamp']}
+                ticker_data = {'timestamp': df_reset[timestamp_col]}
                 
                 # Cerca tutte le colonne per questo ticker
                 for col in df_reset.columns:
                     if isinstance(col, tuple) and col[0] == ticker:
                         metric = col[1]  # Open, High, Low, Close, Volume
                         ticker_data[metric] = df_reset[col]
+                
+                # Verifica che abbiamo almeno alcune colonne essenziali
+                if 'Close' not in ticker_data:
+                    print(f"[WARNING] Ticker {ticker} senza dati Close, skip")
+                    continue
                 
                 # Crea DataFrame per questo ticker
                 ticker_df = pd.DataFrame(ticker_data)
@@ -104,9 +131,13 @@ def store_bulk_data(df, interval, db: Session):
     else:
         # Caso singolo ticker senza multi-level
         print(f"[INFO] Gestendo singolo ticker")
-        # Assumi che tutte le colonne siano per un singolo ticker
-        # Il nome del ticker dovrebbe essere nel primo chunk
-        ticker = FTSE_MIB_TICKERS[0] if FTSE_MIB_TICKERS else "UNKNOWN"
+        
+        # Rinomina la colonna timestamp
+        if timestamp_col != 'timestamp':
+            df_reset = df_reset.rename(columns={timestamp_col: 'timestamp'})
+        
+        # Assumi che sia un singolo ticker (prendi il primo dal chunk corrente)
+        ticker = "UNKNOWN"
         process_single_ticker(df_reset, ticker, interval, db)
 
 def process_single_ticker(df, ticker, interval, db: Session):
@@ -185,8 +216,11 @@ def populate_all():
                 try:
                     # Download dati con retry logic
                     max_retries = 3
+                    df = None
+                    
                     for attempt in range(max_retries):
                         try:
+                            print(f"[INFO] Tentativo {attempt + 1} di download per {chunk}")
                             df = yf.download(
                                 tickers=chunk,
                                 interval=interval,
@@ -194,23 +228,48 @@ def populate_all():
                                 group_by="ticker",
                                 auto_adjust=True,
                                 prepost=True,
-                                threads=True
+                                threads=True,
+                                progress=False  # Disabilita progress bar per evitare spam
                             )
-                            break  # Success, exit retry loop
+                            
+                            # Controlla se il download è riuscito
+                            if df is not None and not df.empty:
+                                print(f"[SUCCESS] Download completato per chunk {chunk}")
+                                break
+                            else:
+                                print(f"[WARNING] DataFrame vuoto per chunk {chunk}")
+                                if attempt < max_retries - 1:
+                                    time.sleep(2)
+                                    continue
+                                else:
+                                    print(f"[ERROR] Tutti i tentativi falliti per chunk {chunk}")
+                                    df = None
+                                    break
+                            
                         except Exception as download_error:
+                            error_msg = str(download_error)
+                            print(f"[WARNING] Tentativo {attempt + 1} fallito: {error_msg}")
+                            
+                            # Se è un errore di ticker delisted, non ritentare
+                            if "delisted" in error_msg.lower() or "YFTzMissingError" in error_msg:
+                                print(f"[INFO] Ticker probabilmente delisted in chunk {chunk}, continuo con i dati disponibili")
+                                break
+                            
                             if attempt < max_retries - 1:
-                                print(f"[WARNING] Tentativo {attempt + 1} fallito per chunk {chunk}: {download_error}")
-                                time.sleep(2)  # Wait before retry
+                                time.sleep(2)
                                 continue
                             else:
-                                raise download_error  # Re-raise on final attempt
+                                print(f"[ERROR] Tutti i tentativi falliti per chunk {chunk}: {error_msg}")
+                                df = None
+                                break
                     
                     increment_api_counter(db)
                     
-                    if not df.empty:
+                    # Processa i dati se disponibili
+                    if df is not None and not df.empty:
                         store_bulk_data(df, interval, db)
                     else:
-                        print(f"[WARNING] Nessun dato scaricato per chunk {chunk}")
+                        print(f"[WARNING] Nessun dato da processare per chunk {chunk}")
                         
                     # Pausa tra i chunk per evitare rate limiting
                     time.sleep(1)
