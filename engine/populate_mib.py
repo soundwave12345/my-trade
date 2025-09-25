@@ -31,6 +31,15 @@ def increment_api_counter(db: Session):
     db.commit()
 
 def store_bulk_data(df, interval, db: Session):
+    print("\n[DEBUG] Structure of Yahoo Finance DataFrame")
+    print("Type:", type(df))
+    print("Index type:", type(df.index))
+    print("Index name:", df.index.name)
+    print("Columns:", df.columns)
+    print("Shape:", df.shape)
+    print("\nHead of the DataFrame:")
+    print(df.head(10))  # prime 10 righe
+    print("-" * 80)
     """Salva i dati bulk nel database, gestendo multi-ticker e ticker senza dati"""
     # Garantisce sempre la colonna timestamp
     if isinstance(df.index, pd.DatetimeIndex):
