@@ -32,13 +32,13 @@ def increment_api_counter(db: Session):
 
 def store_bulk_data(df, interval, db: Session):
     """Salva i dati bulk nel database, gestendo multi-ticker e ticker senza dati"""
+    # Garantisce sempre la colonna timestamp
     if isinstance(df.index, pd.DatetimeIndex):
-        df = df.reset_index()
-    if "Datetime" in df.columns:
-        df = df.rename(columns={"Datetime": "timestamp"})
-    elif "timestamp" not in df.columns:
+        df = df.reset_index().rename(columns={df.index.name or "index": "timestamp"})
+    if "timestamp" not in df.columns:
         print(f"[WARNING] DataFrame senza timestamp per interval {interval}. Skip batch.")
         return
+
 
     # Ciclo sui ticker presenti
     tickers_in_df = df.columns.levels[1]
