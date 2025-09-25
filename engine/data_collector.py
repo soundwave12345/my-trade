@@ -63,9 +63,17 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
     # Chiamata API
     increment_api_counter(db)
     df = yf.download(ticker, interval=interval, period=period, start=start_time, auto_adjust=False)
+    # Reset index per avere la colonna 'timestamp' come dato normale
     df.reset_index(inplace=True)
+    
+    # Se la colonna temporale si chiama 'index', rinominala
+    if "index" in df.columns:
+        df.rename(columns={"index": "timestamp"}, inplace=True)
+    elif "Datetime" in df.columns:
+        df.rename(columns={"Datetime": "timestamp"}, inplace=True)
+    
+    # Rinomina le altre colonne di Yahoo Finance
     df.rename(columns={
-        "Datetime": "timestamp",
         "Open": "open",
         "High": "high",
         "Low": "low",
@@ -73,16 +81,10 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
         "Volume": "volume"
     }, inplace=True)
 
+
     # Salva su DB
     for _, row in df.iterrows():
-        timestamp_value = row["timestamp"]
-
-        if hasattr(timestamp_value, "to_pydatetime"):
-            timestamp_value = timestamp_value.to_pydatetime()
-        elif str(type(timestamp_value)) == "<class 'numpy.datetime64'>":
-            timestamp_value = pd.to_datetime(timestamp_value).to_pydatetime()
-        elif isinstance(timestamp_value, str):
-            timestamp_value = datetime.fromisoformat(timestamp_value)
+        timestamp_value = pd.to_datetime(row["timestamp"]).to_pydatetime()
         print(row["timestamp"], type(row["timestamp"]))
         price = Price(
             stock_id=stock.id,
