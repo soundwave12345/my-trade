@@ -63,6 +63,8 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
     # Chiamata API
     increment_api_counter(db)
     df = yf.download(ticker, interval=interval, period=period, start=start_time, auto_adjust=False)
+    # Appiattisci le colonne MultiIndex -> diventa ["Datetime", "Adj Close", "Close", "High", "Low", "Open", "Volume"]
+    df.columns = [col[0] if col[0] != "Datetime" else "Datetime" for col in df.columns]
     # Reset index per avere la colonna 'timestamp' come dato normale
     df.reset_index(inplace=True)
     print("Colonne:", df.columns)
@@ -76,6 +78,7 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
     
     # Rinomina le altre colonne di Yahoo Finance
     df.rename(columns={
+        "Datetime": "timestamp",
         "Open": "open",
         "High": "high",
         "Low": "low",
@@ -84,9 +87,10 @@ def fetch_and_store_prices(ticker: str, interval: str = "1h", period="7d"):
     }, inplace=True)
 
 
+
     # Salva su DB
     for _, row in df.iterrows():
-        timestamp_value = pd.to_datetime(row["timestamp"]).to_pydatetime()
+        timestamp_value = pd.to_datetime(row["timestamp"]) 
         print(row["timestamp"], type(row["timestamp"]))
         price = Price(
             stock_id=stock.id,
